@@ -4,6 +4,7 @@ Agent implementations for the cancer research system.
 import google.generativeai as genai
 from google.generativeai.types import Tool
 from typing import Dict, Any, List
+import os
 try:
     from .config import GOOGLE_API_KEY, MODEL_NAME, DISCUSSION_ROUNDS, TARGET_MUTATION, TARGET_PROTEIN
     from .tools import arxiv_search_tool, autodock_vina_simulation_tool, AutoDockVinaSimulationTool
@@ -193,14 +194,19 @@ REQUIREMENTS:
 2. Aim for binding energy ≤ -10.0 kcal/mol
 3. Address resistance mechanisms
 4. Be synthetically feasible
+5. MUST provide a valid SMILES string
 
 RESPONSE FORMAT (BE CONCISE - MAX 300 WORDS):
 - Molecule name and core scaffold
 - Key design features (2-3 main points)
 - Expected binding improvements
-- SMILES string if possible
+- **VALID SMILES string (REQUIRED)** - Use standard drug-like molecules as templates
 
-Focus on practical, innovative design.
+IMPORTANT: Base your SMILES on known EGFR inhibitors like:
+- Gefitinib: COc1cc2ncnc(Nc3ccc(F)c(Cl)c3)c2cc1OCCCN1CCOCC1
+- Erlotinib: C#Cc1cccc(Nc2ncnc3cc(OCCOC)c(OCCOC)cc23)c1
+
+Focus on practical, innovative design with VALID chemistry.
 """
         
         response = self.model.generate_content(prompt)
@@ -308,10 +314,11 @@ Example output: CC(C)C1=NC(=NC(=N1)N2CCN(CC2)C(=O)C3=CC=C(C=C3)F)N4CCOCC4
         
         response = self.model.generate_content(prompt)
         if response.candidates and response.candidates[0].content.parts:
-            smiles = response.text.strip().replace("`", "").replace("SMILES:", "").strip()
+            response_text = response.text.strip()
+            smiles = self._extract_valid_smiles(response_text)
         else:
             # Fallback SMILES for a generic kinase inhibitor
-            smiles = "CC(C)C1=NC(=NC(=N1)N2CCN(CC2)C(=O)C3=CC=C(C=C3)F)N4CCOCC4"
+            smiles = "COc1cc2ncnc(Nc3ccc(F)c(Cl)c3)c2cc1OCCCN1CCOCC1"  # Gefitinib-based
         
         # Clean up any remaining formatting
         lines = smiles.split('\n')
@@ -321,6 +328,51 @@ Example output: CC(C)C1=NC(=NC(=N1)N2CCN(CC2)C(=O)C3=CC=C(C=C3)F)N4CCOCC4
                 return line
         
         return smiles
+    
+    def _extract_valid_smiles(self, response_text: str) -> str:
+        """Extract and validate SMILES string from response text."""
+        try:
+            from rdkit import Chem
+            
+            # Look for SMILES patterns in the response
+            import re
+            
+            # Common SMILES patterns to look for
+            smiles_patterns = [
+                r'SMILES[:\s]+([A-Za-z0-9\(\)\[\]@\+\-=#\.\\\\/]+)',
+                r'([A-Za-z0-9\(\)\[\]@\+\-=#\.\\\\/]{20,})',  # Long chemical strings
+                r'([CONSPFClBrI][A-Za-z0-9\(\)\[\]@\+\-=#\.\\\\/]{15,})'  # Starting with common atoms
+            ]
+            
+            for pattern in smiles_patterns:
+                matches = re.findall(pattern, response_text)
+                for match in matches:
+                    # Clean the match
+                    candidate_smiles = match.strip().replace("`", "").replace("'", "").replace('"', '')
+                    
+                    # Validate with RDKit
+                    try:
+                        mol = Chem.MolFromSmiles(candidate_smiles)
+                        if mol is not None:
+                            # Additional validation
+                            Chem.SanitizeMol(mol)
+                            print(f"✅ Valid SMILES found: {candidate_smiles}")
+                            return candidate_smiles
+                    except:
+                        continue
+            
+            # If no valid SMILES found, return a known good one
+            print("⚠️ No valid SMILES found in response, using Gefitinib template")
+            return "COc1cc2ncnc(Nc3ccc(F)c(Cl)c3)c2cc1OCCCN1CCOCC1"
+            
+        except ImportError:
+            # RDKit not available, use simple extraction
+            import re
+            match = re.search(r'([A-Za-z0-9\(\)\[\]@\+\-=#\.\\\\/]{20,})', response_text)
+            if match:
+                return match.group(1).strip()
+            else:
+                return "COc1cc2ncnc(Nc3ccc(F)c(Cl)c3)c2cc1OCCCN1CCOCC1"
     
     def run_simulation(self, molecule_smiles: str) -> Dict[str, Any]:
         """
@@ -341,6 +393,9 @@ Example output: CC(C)C1=NC(=NC(=N1)N2CCN(CC2)C(=O)C3=CC=C(C=C3)F)N4CCOCC4
         print(f"✅ Simulation Status: {result['status']}")
         if result.get('output_file'):
             print(f"📁 3D Structure saved: {result['output_file']}")
+        if result.get('visualization_file'):
+            print(f"🎨 3D Visualization: {result['visualization_file']}")
+            print(f"🌐 Open in browser: file://{os.path.abspath(result['visualization_file'])}")
         
         return result
 

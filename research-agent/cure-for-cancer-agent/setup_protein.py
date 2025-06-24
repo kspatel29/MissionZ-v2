@@ -54,9 +54,10 @@ def download_protein_structure():
         
         try:
             # Check if obabel is available
-            result = subprocess.run(['obabel', '--version'], 
+            result = subprocess.run(['obabel'], 
                                   capture_output=True, text=True, timeout=5)
-            if result.returncode != 0:
+            output_text = result.stdout + result.stderr
+            if "Open Babel" not in output_text:
                 print("❌ Open Babel (obabel) not found. Please install it:")
                 print("   Ubuntu/Debian: sudo apt-get install openbabel")
                 print("   macOS: brew install open-babel")

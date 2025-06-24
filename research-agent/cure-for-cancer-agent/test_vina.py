@@ -11,6 +11,8 @@ def test_dependencies():
     print("🧪 Testing AutoDock Vina Dependencies")
     print("=" * 40)
     
+    all_available = True
+    
     # Test RDKit
     try:
         from rdkit import Chem
@@ -19,7 +21,7 @@ def test_dependencies():
     except ImportError:
         print("❌ RDKit not available")
         print("   Install with: pip install rdkit")
-        return False
+        all_available = False
     
     # Test AutoDock Vina
     try:
@@ -28,30 +30,34 @@ def test_dependencies():
     except ImportError:
         print("❌ AutoDock Vina Python package not available")
         print("   Install with: pip install vina")
-        return False
+        all_available = False
     
     # Test Open Babel
     import subprocess
     try:
-        result = subprocess.run(['obabel', '--version'], 
+        result = subprocess.run(['obabel'], 
                               capture_output=True, text=True, timeout=5)
-        if result.returncode == 0:
+        output_text = result.stdout + result.stderr
+        if "Open Babel" in output_text:
             print("✅ Open Babel (obabel) available")
         else:
             print("❌ Open Babel (obabel) not working properly")
-            return False
+            print(f"   Return code: {result.returncode}")
+            print(f"   Stdout: {result.stdout[:100]}...")
+            print(f"   Stderr: {result.stderr[:100]}...")
+            all_available = False
     except FileNotFoundError:
         print("❌ Open Babel (obabel) not found")
         print("   Install instructions:")
         print("   Ubuntu/Debian: sudo apt-get install openbabel")
         print("   macOS: brew install open-babel")
         print("   Windows: Download from http://openbabel.org/")
-        return False
+        all_available = False
     except Exception as e:
         print(f"❌ Error testing Open Babel: {e}")
-        return False
+        all_available = False
     
-    return True
+    return all_available
 
 def test_protein_file():
     """Test if protein file is available."""
