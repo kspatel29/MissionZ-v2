@@ -11,6 +11,7 @@ try:
     from .agents import (
         SubAgent1Researcher, CollaborativeDiscussion, SubAgent4SolutionWriter
     )
+    from .database import DatabaseManager
 except ImportError:
     from config import (
         GOOGLE_API_KEY, MODEL_NAME, MAX_ITERATIONS, 
@@ -19,6 +20,7 @@ except ImportError:
     from agents import (
         SubAgent1Researcher, CollaborativeDiscussion, SubAgent4SolutionWriter
     )
+    from database import DatabaseManager
 
 
 class CancerResearchOrchestrator:
@@ -30,12 +32,24 @@ class CancerResearchOrchestrator:
         # Configure Gemini API
         genai.configure(api_key=GOOGLE_API_KEY)
         
-        # Initialize agents
-        self.researcher = SubAgent1Researcher()
-        self.discussion_manager = CollaborativeDiscussion()
-        self.solution_writer = SubAgent4SolutionWriter()
+        # Initialize database manager
+        try:
+            self.db_manager = DatabaseManager()
+            print("✅ Database connection established")
+        except Exception as e:
+            print(f"⚠️ Database connection failed: {e}")
+            self.db_manager = None
         
-        # Initialize context
+        # Initialize agents with database manager
+        self.researcher = SubAgent1Researcher(self.db_manager)
+        self.discussion_manager = CollaborativeDiscussion(self.db_manager)
+        self.solution_writer = SubAgent4SolutionWriter(self.db_manager)
+        
+        # Initialize context with existing solutions
+        existing_solutions = ""
+        if self.db_manager:
+            existing_solutions = self.db_manager.get_existing_solutions_summary()
+        
         self.context = f"""
 🎯 **PROBLEM STATEMENT:** {PROBLEM_STATEMENT}
 
@@ -46,6 +60,8 @@ class CancerResearchOrchestrator:
 - Application: Non-small cell lung cancer treatment
 - Metric: Binding energy (kcal/mol)
 - Success Threshold: ≤ {GOAL_BINDING_ENERGY} kcal/mol
+
+{existing_solutions}
 """
         
         self.iteration_results = []
@@ -82,6 +98,13 @@ class CancerResearchOrchestrator:
             if not final_molecule or len(final_molecule) < 5:
                 print("❌ Discussion failed to produce valid molecule. Retrying...")
                 feedback = "\n\n⚠️ **FEEDBACK:** Previous discussion failed to produce a valid SMILES string. Please propose a concrete, specific molecular structure."
+                self.context += feedback
+                continue
+            
+            # Check if molecule already exists in database
+            if self.db_manager and self.db_manager.check_molecule_exists(final_molecule):
+                print(f"⚠️ Molecule already tested: {final_molecule}")
+                feedback = f"\n\n⚠️ **FEEDBACK:** The molecule {final_molecule} has already been tested. Please propose a completely different, novel molecular structure."
                 self.context += feedback
                 continue
             

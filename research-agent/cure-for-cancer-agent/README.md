@@ -2,6 +2,12 @@
 
 A sophisticated multi-agent architecture for cancer research, specifically designed to discover novel small molecule inhibitors for the EGFR L858R mutation in non-small cell lung cancer.
 
+# TO-DO
+- Improve Pipeline, improve tool calling
+- Solution Proposal handling
+- Cooldown Timer
+- Cost Calculation function
+
 ## 🏗️ Architecture Overview
 
 The system consists of four specialized agents working in collaboration:

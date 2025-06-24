@@ -8,9 +8,11 @@ import os
 try:
     from .config import GOOGLE_API_KEY, MODEL_NAME, DISCUSSION_ROUNDS, TARGET_MUTATION, TARGET_PROTEIN
     from .tools import arxiv_search_tool, autodock_vina_simulation_tool, AutoDockVinaSimulationTool
+    from .database import DatabaseManager
 except ImportError:
     from config import GOOGLE_API_KEY, MODEL_NAME, DISCUSSION_ROUNDS, TARGET_MUTATION, TARGET_PROTEIN
     from tools import arxiv_search_tool, autodock_vina_simulation_tool, AutoDockVinaSimulationTool
+    from database import DatabaseManager
 
 
 
@@ -82,13 +84,16 @@ class SubAgent1Researcher:
     Uses separate agents to avoid tool conflicts.
     """
     
-    def __init__(self):
+    def __init__(self, db_manager: DatabaseManager = None):
         # Initialize specialized search agents
         self.web_search_agent = WebSearchAgent()
         self.arxiv_search_agent = ArxivSearchAgent()
         
         # Coordinator model (no tools, just coordination)
         self.coordinator_model = genai.GenerativeModel(MODEL_NAME)
+        
+        # Database manager for logging
+        self.db_manager = db_manager
     
     def research(self, problem: str) -> str:
         """
@@ -100,10 +105,9 @@ class SubAgent1Researcher:
         Returns:
             Comprehensive research findings
         """
-        print("\n🔬 === SUB-AGENT 1: RESEARCH PHASE ===")
+        print("🔬 SUB-AGENT 1: Research Phase")
         
         # Step 1: Web search for current discoveries and solutions
-        print("📡 Step 1/2: Performing Google Search for latest discoveries...")
         web_search_prompt = f"""
         Search for and summarize the latest (2023-2025) research discoveries and solutions for:
         - Small molecule inhibitors targeting {TARGET_MUTATION} mutated {TARGET_PROTEIN}
@@ -115,27 +119,15 @@ class SubAgent1Researcher:
         Provide specific examples of successful molecules and their binding energies if available.
         """
         
-        print(f"\n📤 WEB SEARCH INPUT:\n{web_search_prompt[:200]}...")
         web_findings = self.web_search_agent.search(web_search_prompt)
-        print(f"\n📥 WEB SEARCH OUTPUT:\n{web_findings[:500]}...")
-        if "failed" not in web_findings.lower():
-            print("✅ Web search completed successfully")
-        else:
-            print(f"❌ Web search failed: {web_findings}")
+        if "failed" in web_findings.lower():
             web_findings = "Web search unavailable due to API limitations."
         
         # Step 2: ArXiv search for academic research
-        print("📚 Step 2/2: Searching ArXiv for academic research...")
         arxiv_search_query = f"{TARGET_PROTEIN} inhibitor {TARGET_MUTATION} mutation small molecule"
-        
         arxiv_query = f"Search ArXiv for research papers about: {arxiv_search_query}. Focus on novel chemical structures and binding affinity improvements."
-        print(f"\n📤 ARXIV SEARCH INPUT:\n{arxiv_query}")
         arxiv_findings = self.arxiv_search_agent.search(arxiv_query)
-        print(f"\n📥 ARXIV SEARCH OUTPUT:\n{arxiv_findings[:500]}...")
-        if "failed" not in arxiv_findings.lower():
-            print("✅ ArXiv search completed successfully")
-        else:
-            print(f"❌ ArXiv search failed: {arxiv_findings}")
+        if "failed" in arxiv_findings.lower():
             arxiv_findings = "ArXiv search unavailable."
         
         # Compile comprehensive research report
@@ -153,7 +145,11 @@ The above findings provide current state-of-the-art approaches, successful molec
 and important discoveries in {TARGET_PROTEIN} {TARGET_MUTATION} inhibitor development.
 """
         
-        print("✅ Research phase completed")
+        # Log to database
+        if self.db_manager:
+            self.db_manager.log_agent_conversation("SubAgent1Researcher", research_report)
+        
+        print("✅ Research completed")
         return research_report
 
 
@@ -163,11 +159,12 @@ class SubAgent2Chemist:
     Has access to research_agent and web_search_agent tools.
     """
     
-    def __init__(self):
+    def __init__(self, db_manager: DatabaseManager = None):
         self.model = genai.GenerativeModel(MODEL_NAME)
         # Add specialized search agents for additional research if needed
         self.web_search_agent = WebSearchAgent()
         self.arxiv_search_agent = ArxivSearchAgent()
+        self.db_manager = db_manager
     
     def propose_solution(self, context: str, discussion_history: List[str]) -> str:
         """
@@ -202,16 +199,23 @@ RESPONSE FORMAT (BE CONCISE - MAX 300 WORDS):
 - Expected binding improvements
 - **VALID SMILES string (REQUIRED)** - Use standard drug-like molecules as templates
 
-IMPORTANT: Base your SMILES on known EGFR inhibitors like:
-- Gefitinib: COc1cc2ncnc(Nc3ccc(F)c(Cl)c3)c2cc1OCCCN1CCOCC1
-- Erlotinib: C#Cc1cccc(Nc2ncnc3cc(OCCOC)c(OCCOC)cc23)c1
+IMPORTANT: 
+1. Base your SMILES on known EGFR inhibitors like:
+   - Gefitinib: COc1cc2ncnc(Nc3ccc(F)c(Cl)c3)c2cc1OCCCN1CCOCC1
+   - Erlotinib: C#Cc1cccc(Nc2ncnc3cc(OCCOC)c(OCCOC)cc23)c1
+2. DO NOT repeat any molecules from the existing solutions list above
+3. Propose NOVEL, DIFFERENT chemical structures only
 
-Focus on practical, innovative design with VALID chemistry.
+Focus on practical, innovative design with VALID chemistry and NO DUPLICATES.
 """
         
         response = self.model.generate_content(prompt)
         if response.candidates and response.candidates[0].content.parts:
-            return response.text
+            agent_response = response.text
+            # Log to database
+            if self.db_manager:
+                self.db_manager.log_agent_conversation("SubAgent2Chemist", agent_response)
+            return agent_response
         else:
             return "I apologize, but I cannot generate a molecular proposal at this time. Please try rephrasing your request."
 
@@ -222,11 +226,12 @@ class SubAgent3Biologist:
     Has access to research_agent and web_search_agent tools.
     """
     
-    def __init__(self):
+    def __init__(self, db_manager: DatabaseManager = None):
         self.model = genai.GenerativeModel(MODEL_NAME)
         # Add specialized search agents for additional research if needed
         self.web_search_agent = WebSearchAgent()
         self.arxiv_search_agent = ArxivSearchAgent()
+        self.db_manager = db_manager
     
     def critique_solution(self, context: str, discussion_history: List[str]) -> str:
         """
@@ -256,12 +261,13 @@ ANALYSIS REQUIREMENTS:
 
 RESPONSE FORMAT (BE CONCISE - MAX 250 WORDS):
 - Overall assessment (viable/needs work)
+- Check if molecule is duplicate from existing solutions
 - 2-3 main strengths
 - 2-3 main weaknesses  
 - Specific improvement suggestions
 - Binding energy prediction
 
-Be constructively critical and focused.
+Be constructively critical and focused. REJECT any duplicate molecules.
 
 CRITICAL INSTRUCTION FOR CONCLUDING THE DISCUSSION:
 
@@ -274,7 +280,11 @@ If you do not include the exact phrase, the discussion will automatically contin
         
         response = self.model.generate_content(prompt)
         if response.candidates and response.candidates[0].content.parts:
-            return response.text
+            agent_response = response.text
+            # Log to database
+            if self.db_manager:
+                self.db_manager.log_agent_conversation("SubAgent3Biologist", agent_response)
+            return agent_response
         else:
             return "I apologize, but I cannot generate a critique at this time. Please try rephrasing your request."
 
@@ -347,9 +357,10 @@ class SubAgent4SolutionWriter:
     and runs molecular docking simulations.
     """
     
-    def __init__(self):
+    def __init__(self, db_manager: DatabaseManager = None):
         self.model = genai.GenerativeModel(MODEL_NAME)
         self.simulation_tool = AutoDockVinaSimulationTool()
+        self.db_manager = db_manager
     
     def extract_final_molecule(self, discussion_history: List[str]) -> str:
         """
@@ -462,10 +473,18 @@ Example output: CC(C)C1=NC(=NC(=N1)N2CCN(CC2)C(=O)C3=CC=C(C=C3)F)N4CCOCC4
         print(f"📊 Binding Energy: {result['binding_energy']} kcal/mol")
         print(f"✅ Simulation Status: {result['status']}")
         if result.get('output_file'):
-            print(f"📁 3D Structure saved: {result['output_file']}")
+            print(f"📁 3D Structure: {result['output_file']}")
         if result.get('visualization_file'):
             print(f"🎨 3D Visualization: {result['visualization_file']}")
-            print(f"🌐 Open in browser: file://{os.path.abspath(result['visualization_file'])}")
+        
+        # Log solution to database
+        if self.db_manager:
+            self.db_manager.log_solution(
+                molecule_smiles, 
+                result['binding_energy'], 
+                result, 
+                result.get('visualization_file')
+            )
         
         return result
 
@@ -475,10 +494,11 @@ class CollaborativeDiscussion:
     Manages the collaborative discussion between Sub-Agent 2 and Sub-Agent 3.
     """
     
-    def __init__(self):
-        self.agent2 = SubAgent2Chemist()
-        self.agent3 = SubAgent3Biologist()
-        self.agent4 = SubAgent4SolutionWriter()
+    def __init__(self, db_manager: DatabaseManager = None):
+        self.agent2 = SubAgent2Chemist(db_manager)
+        self.agent3 = SubAgent3Biologist(db_manager)
+        self.agent4 = SubAgent4SolutionWriter(db_manager)
+        self.db_manager = db_manager
     
     def conduct_discussion(self, context: str) -> tuple[str, List[str]]:
         """
@@ -490,37 +510,31 @@ class CollaborativeDiscussion:
         Returns:
             Tuple of (final_molecule_smiles, discussion_history)
         """
-        print("\n💬 === SUB-AGENTS 2 & 3: COLLABORATIVE DISCUSSION ===")
+        print("💬 SUB-AGENTS 2 & 3: Collaborative Discussion")
         
         discussion_history = [f"🎯 **DISCUSSION CONTEXT:**\n{context}"]
         
         for round_num in range(DISCUSSION_ROUNDS):
-            print(f"\n🔄 Discussion Round {round_num + 1}/{DISCUSSION_ROUNDS}")
+            print(f"🔄 Round {round_num + 1}/{DISCUSSION_ROUNDS}")
             
             # Agent 2 (Chemist) proposes or refines
-            print("👨‍🔬 Medicinal Chemist (Agent 2) proposing...")
             agent2_response = self.agent2.propose_solution(context, discussion_history)
-            print(f"\n📥 CHEMIST FULL RESPONSE:\n{agent2_response}\n")
-            print(f"💡 Chemist Summary: {agent2_response[:200]}...")
+            print(f"👨‍🔬 Chemist: {agent2_response[:150]}...")
             discussion_history.append(f"\n👨‍🔬 **MEDICINAL CHEMIST (Agent 2):**\n{agent2_response}")
             
             # Agent 3 (Biologist) critiques and validates
-            print("👩‍🔬 Computational Biologist (Agent 3) analyzing...")
             agent3_response = self.agent3.critique_solution(context, discussion_history)
-            print(f"\n📥 BIOLOGIST FULL RESPONSE:\n{agent3_response}\n")
-            print(f"🔍 Biologist Summary: {agent3_response[:200]}...")
+            print(f"👩‍🔬 Biologist: {agent3_response[:150]}...")
             discussion_history.append(f"\n👩‍🔬 **COMPUTATIONAL BIOLOGIST (Agent 3):**\n{agent3_response}")
 
             # Check if Agent 3 is confident and wants to end early
             if self.agent3.is_confident_about_solution(agent3_response):
-                print(f"\n✅ Agent 3 is confident about the solution. Ending discussion early after {round_num + 1} rounds.")
+                print(f"✅ Discussion concluded after {round_num + 1} rounds")
                 break
         
         # Extract final molecule from discussion
-        print("\n🎯 Extracting final molecular proposal...")
-        print(f"\n📤 MOLECULE EXTRACTION INPUT:\nFull discussion history with {len(discussion_history)} entries")
+        print("🎯 Extracting final molecule...")
         final_molecule = self.agent4.extract_final_molecule(discussion_history)
-        print(f"\n📥 MOLECULE EXTRACTION OUTPUT:\n{final_molecule}")
-        print(f"🧬 Final Proposed Molecule: {final_molecule}")
+        print(f"🧬 Final Molecule: {final_molecule}")
         
         return final_molecule, discussion_history
