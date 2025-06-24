@@ -19,7 +19,7 @@ GOAL_BINDING_ENERGY = -10.0  # kcal/mol (more negative is better)
 
 # Research Configuration
 ARXIV_MAX_RESULTS = 5
-DISCUSSION_ROUNDS = 2
+DISCUSSION_ROUNDS = 7
 
 # EGFR Target Information
 TARGET_PROTEIN = "EGFR"

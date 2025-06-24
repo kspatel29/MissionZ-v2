@@ -262,14 +262,6 @@ RESPONSE FORMAT (BE CONCISE - MAX 250 WORDS):
 - Binding energy prediction
 
 Be constructively critical and focused.
-
-CRITICAL INSTRUCTION FOR CONCLUDING THE DISCUSSION:
-
-Your default behavior is to continue the discussion for further refinement. However, if you become highly confident that the current molecule is a strong candidate and further discussion is unlikely to yield significant improvements, you MUST end your response with one of the exact phrase on a new line:
-
-CONCLUSION: Proceed to final simulation.
-
-If you do not include the exact phrase, the discussion will automatically continue. Do not use these phrases unless you are confident.
 """
         
         response = self.model.generate_content(prompt)
@@ -279,68 +271,6 @@ If you do not include the exact phrase, the discussion will automatically contin
             return "I apologize, but I cannot generate a critique at this time. Please try rephrasing your request."
 
 
-
-    def is_confident_about_solution(self, critique_response: str) -> bool:
-        """
-        Analyzes the critique response to determine if the agent is confident
-        about the proposed solution and wants to end the discussion early.
-        
-        Args:
-            critique_response: The critique response from this agent
-            
-        Returns:
-            True if confident and wants to end discussion, False otherwise
-        """
-        # Convert to lowercase for easier matching
-        response_lower = critique_response.lower()
-        
-        # Keywords indicating high confidence
-        confidence_indicators = [
-            "excellent proposal",
-            "highly promising",
-            "strong candidate",
-            "ready for testing",
-            "confident this will",
-            "optimal design",
-            "no major concerns",
-            "well-designed molecule",
-            "comprehensive solution",
-            "final recommendation"
-        ]
-        
-        # Keywords indicating the agent wants to proceed
-        proceed_indicators = [
-            "Proceed to final simulation",
-            "proceed with simulation",
-            "test this molecule",
-            "move to docking",
-            "ready for autodock",
-            "no further modifications needed"
-        ]
-        
-        # Check for confidence indicators
-        confidence_score = sum(1 for indicator in confidence_indicators 
-                             if indicator in response_lower)
-        
-        # Check for proceed indicators
-        proceed_score = sum(1 for indicator in proceed_indicators 
-                          if indicator in response_lower)
-        
-        # Agent is confident if:
-        # 1. High confidence score (2+ confidence indicators), OR
-        # 2. Any proceed indicators, OR
-        # 3. Response is short and positive (likely means satisfied)
-        is_confident = (
-            confidence_score >= 2 or
-            proceed_score >= 1 or
-            (len(response_lower) < 200 and any(word in response_lower 
-                                              for word in ["good", "promising", "viable", "acceptable"]))
-        )
-        
-        if is_confident:
-            print(f"\n🎯 Agent 3 confidence analysis: {confidence_score} confidence indicators, {proceed_score} proceed indicators")
-        
-        return is_confident
 class SubAgent4SolutionWriter:
     """
     Solution Writer Agent - converts discussion outcomes to AutoDock Vina format
@@ -510,11 +440,6 @@ class CollaborativeDiscussion:
             print(f"\n📥 BIOLOGIST FULL RESPONSE:\n{agent3_response}\n")
             print(f"🔍 Biologist Summary: {agent3_response[:200]}...")
             discussion_history.append(f"\n👩‍🔬 **COMPUTATIONAL BIOLOGIST (Agent 3):**\n{agent3_response}")
-
-            # Check if Agent 3 is confident and wants to end early
-            if self.agent3.is_confident_about_solution(agent3_response):
-                print(f"\n✅ Agent 3 is confident about the solution. Ending discussion early after {round_num + 1} rounds.")
-                break
         
         # Extract final molecule from discussion
         print("\n🎯 Extracting final molecular proposal...")

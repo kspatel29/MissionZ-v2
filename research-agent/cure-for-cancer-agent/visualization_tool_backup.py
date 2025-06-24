@@ -236,9 +236,9 @@ class VisualizationTool:
                 // First try to center on ligand
                 viewer.zoomTo(ligandModel);
                 // Then zoom out a bit to show context
-                viewer.zoom(0.4);
+                viewer.zoom(0.8);
                 viewer.render();
-            }}, 2000);
+            }}, 500);
         }}
         
         function resetView() {{
